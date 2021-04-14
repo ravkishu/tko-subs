@@ -55,7 +55,12 @@ type Configuration struct {
 	herokuappname   *string
 	domain          *string
 	threadCount     *int
+	dnsServer       *string
+	dnsPort         *string
 }
+
+var dnsServer = "8.8.8.8"
+var dnsPort = "53"
 
 func main() {
 	config := Configuration{
@@ -68,8 +73,13 @@ func main() {
 		herokuapikey:    flag.String("herokuapikey", "", "Heroku API key"),
 		herokuappname:   flag.String("herokuappname", "", "Heroku app name"),
 		domain:          flag.String("domain", "", "Domains separated by ,"),
-		threadCount:     flag.Int("threads", 5, "Number of threads to run parallel")}
+		dnsServer:       flag.String("server", "8.8.8.8", "A DNS server to direct queries to"),
+		dnsPort:         flag.String("port", "53", "The DNS server port (you shouldn't have to change this)"),
+
+		threadCount: flag.Int("threads", 5, "Number of threads to run parallel")}
 	flag.Parse()
+	dnsServer = *config.dnsServer
+	dnsPort = *config.dnsPort
 
 	cmsRecords := loadProviders(*config.recordsFilePath)
 	var allResults []DomainScan
@@ -126,7 +136,7 @@ func panicOnError(e error) {
 	}
 }
 
-//showUsageOnError function as a generic check for error when panic is too agressive
+//showUsageOnError function as a generic check for error when panic is too aggressive
 func showUsageOnError(e error) {
 	if e != nil {
 		fmt.Printf("Error: %s\n", e)
@@ -297,7 +307,7 @@ func resolves(domain string) (bool, error) {
 	message := dns.Msg{}
 
 	message.SetQuestion(dns.Fqdn(domain), dns.TypeA)
-	r, _, err := client.Exchange(&message, "8.8.8.8:53")
+	r, _, err := client.Exchange(&message, dnsServer+":"+dnsPort)
 	if err != nil {
 		return false, err
 	}
@@ -309,9 +319,9 @@ func resolves(domain string) (bool, error) {
 
 // getCnameForDomain function to lookup the last CNAME record of a domain
 //
-// For exmaple, if you have a DNS chain that looks like this:
+// For example, if you have a DNS chain that looks like this:
 // foo.example.com -> bar.example.com -> baz.example.com -> 1.2.3.4
-// getCnameForDomain will retrun baz.example.com
+// getCnameForDomain will return baz.example.com
 // Doing CNAME lookups using GOLANG's net package or for that matter just doing a host on a domain
 // does not necessarily let us know about any dead DNS records. So, we need to read the raw DNS response
 // to properly figure out if there are any dead DNS records
@@ -320,7 +330,7 @@ func getCnameForDomain(domain string) (string, error) {
 	m := dns.Msg{}
 
 	m.SetQuestion(dns.Fqdn(domain), dns.TypeCNAME)
-	r, _, err := c.Exchange(&m, "8.8.8.8:53")
+	r, _, err := c.Exchange(&m, dnsServer+":"+dnsPort)
 	if err != nil {
 		return "", err
 	} else if len(r.Answer) == 0 {
@@ -335,7 +345,7 @@ func getCnameForDomain(domain string) (string, error) {
 		lastCname = record.Target
 
 		m.SetQuestion(dns.Fqdn(lastCname), dns.TypeCNAME)
-		r, _, err = c.Exchange(&m, "8.8.8.8:53")
+		r, _, err = c.Exchange(&m, dnsServer+":"+dnsPort)
 		if err != nil {
 			break
 		}
@@ -399,7 +409,7 @@ func authorityReturnRefusedOrServfail(domain string) (bool, error) {
 		return false, err
 	}
 
-	apexAuthority, err := getAuthorityForDomain(apex, "8.8.8.8")
+	apexAuthority, err := getAuthorityForDomain(apex, dnsServer)
 	if err != nil {
 		return false, err
 	}
